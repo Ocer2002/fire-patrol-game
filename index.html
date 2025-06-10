@@ -1,0 +1,532 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script>```html
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>消防員遊戲</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap');
+
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #333;
+            font-family: 'Noto Sans TC', 'Press Start 2P', sans-serif;
+            color: white;
+            overflow: hidden;
+        }
+
+        #game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            border: 8px solid #555;
+            border-radius: 15px;
+            background-color: #222;
+            padding: 20px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5), inset 0 0 15px rgba(0,0,0,0.7);
+            width: 100%;
+            max-width: 95vw;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            font-family: 'Press Start 2P', 'Noto Sans TC', sans-serif;
+            font-size: 2.5rem;
+            color: #FFD700;
+            text-shadow: 4px 4px 0px #c12a2a;
+            margin-bottom: 10px;
+        }
+
+        #ui-bar {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            padding: 10px 20px;
+            box-sizing: border-box;
+            background: #444;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+        }
+
+        #score, #timer {
+            font-family: 'Press Start 2P', 'Noto Sans TC', sans-serif;
+        }
+
+        canvas {
+            background-color: #000;
+            display: block;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 800px;
+            aspect-ratio: 16 / 9;
+        }
+
+        #controls-info {
+            margin-top: 15px;
+            font-size: 1rem;
+            color: #ccc;
+        }
+
+        #start-screen, #game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .dialog-box {
+            background: #333;
+            padding: 20px;
+            width: 80%;
+            max-width: 400px;
+            border-radius: 15px;
+            border: 5px solid #555;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+        }
+
+        .dialog-box h2 {
+            margin-top: 0;
+            font-size: 2rem;
+            color: #FFD700;
+        }
+
+        .start-button, .restart-button {
+            padding: 15px 30px;
+            font-size: 1.5rem;
+            font-family: 'Noto Sans TC', 'Press Start 2P', sans-serif;
+            font-weight: 700;
+            color: white;
+            background: #c12a2a;
+            border: 3px solid #ff5a5a;
+            border-radius: 10px;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: all 0.2s ease;
+        }
+
+        .start-button:hover, .restart-button:hover {
+            background: #ff5a5a;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 10px rgba(255, 90, 90, 0.4);
+        }
+
+        #mobile-controls {
+            display: none;
+            position: fixed;
+            bottom: 5vh;
+            width: 100%;
+            padding: 0 5vw;
+            box-sizing: border-box;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 200;
+            pointer-events: none;
+        }
+
+        #mobile-controls .move-cluster {
+            display: flex;
+            gap: 20px;
+            pointer-events: auto;
+        }
+
+        #mobile-controls .action-cluster {
+            pointer-events: auto;
+        }
+
+        #mobile-controls button {
+            width: 70px;
+            height: 70px;
+            font-size: 2rem;
+            color: white;
+            background: rgba(85, 85, 85, 0.5);
+            border: 3px solid rgba(255, 255, 255, 0.7);
+            border-radius: 50%;
+            user-select: none;
+            -webkit-user-select: none;
+            text-align: center;
+            line-height: 64px;
+            transition: transform 0.1-Brit
+
+System: s ease, background 0.1s ease;
+        }
+
+        #mobile-controls button:active {
+            background: rgba(120, 120, 120, 0.7);
+            transform: scale(0.9);
+        }
+    </style>
+</head>
+<body>
+<div id="game-container">
+    <h1>Fire Patrol</h1>
+    <div id="ui-bar">
+        <div id="score">分數: 0</div>
+        <div id="timer">時間: 60</div>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+    <div id="controls-info">
+        使用方向鍵移動，按空白鍵噴水！
+    </div>
+</div>
+
+<div id="start-screen">
+    <div class="dialog-box">
+        <h2>準備好滅火了嗎？</h2>
+        <p>在60秒內盡可能撲滅更多的火！</p>
+        <button class="start-button">開始遊戲</button>
+    </div>
+</div>
+
+<div id="game-over-screen" style="display: none;">
+    <div class="dialog-box">
+        <h2>遊戲結束！</h2>
+        <p id="final-score">你的分數: 0</p>
+        <button class="restart-button">再玩一次</button>
+    </div>
+</div>
+
+<div id="mobile-controls">
+    <div class="move-cluster">
+        <button id="move-left">◀</button>
+        <button id="move-right">▶</button>
+    </div>
+    <div class="action-cluster">
+        <button id="spray-button">💦</button>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const timerEl = document.getElementById('timer');
+    const startScreen = document.getElementById('start-screen');
+    const gameOverScreen = document.getElementById('game-over-screen');
+    const startButton = document.querySelector('.start-button');
+    const restartButton = document.querySelector('.restart-button');
+    const finalScoreEl = document.getElementById('final-score');
+    const controlsInfo = document.getElementById('controls-info');
+
+    let canvasWidth, canvasHeight;
+    let score = 0;
+    let timeLeft = 60;
+    let gameInterval;
+    let timerInterval;
+    let isGameOver = true;
+    let fires = [];
+    let extinguisherParticles = [];
+    const keys = {};
+    let scaleFactor = 1; // For scaling game objects based on canvas size
+
+    const fireman = {
+        x: 50,
+        y: 0,
+        width: 40,
+        height: 60,
+        speed: 5,
+        dx: 0,
+        direction: 'right'
+    };
+
+    function resizeCanvas() {
+        const container = document.getElementById('game-container');
+        const containerWidth = container.clientWidth - 40;
+        canvas.width = Math.min(containerWidth, 800);
+        canvas.height = canvas.width * (9 / 16);
+        canvasWidth = canvas.width;
+        canvasHeight = canvas.height;
+        scaleFactor = canvas.width / 800; // Scale objects relative to 800px base width
+        fireman.width = 40 * scaleFactor;
+        fireman.height = 60 * scaleFactor;
+        fireman.speed = 5 * scaleFactor;
+        if (!isGameOver) {
+            fireman.y = canvasHeight - fireman.height - 10;
+            fireman.x = Math.min(fireman.x, canvasWidth - fireman.width);
+        }
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+    fireman.y = canvasHeight - fireman.height - 10;
+
+    document.addEventListener('keydown', (e) => { keys[e.code] = true; });
+    document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+    const mobileControls = document.getElementById('mobile-controls');
+    const leftBtn = document.getElementById('move-left');
+    const rightBtn = document.getElementById('move-right');
+    const sprayBtn = document.getElementById('spray-button');
+
+    const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    if (isMobile) {
+        mobileControls.style.display = 'flex';
+        controlsInfo.style.display = 'none';
+        function handleTouch(event, key, isStarting) {
+            event.preventDefault();
+            keys[key] = isStarting;
+        }
+        leftBtn.addEventListener('touchstart', (e) => handleTouch(e, 'ArrowLeft', true), { passive: false });
+        leftBtn.addEventListener('touchend', (e) => handleTouch(e, 'ArrowLeft', false), { passive: false });
+        rightBtn.addEventListener('touchstart', (e) => handleTouch(e, 'ArrowRight', true), { passive: false });
+        rightBtn.addEventListener('touchend', (e) => handleTouch(e, 'ArrowRight', false), { passive: false });
+        sprayBtn.addEventListener('touchstart', (e) => handleTouch(e, 'Space', true), { passive: false });
+        sprayBtn.addEventListener('touchend', (e) => handleTouch(e, 'Space', false), { passive: false });
+    }
+
+    function drawFireman() {
+        const x = fireman.x;
+        const y = fireman.y;
+        const w = fireman.width;
+        const h = fireman.height;
+        ctx.fillStyle = '#b71c1c';
+        ctx.fillRect(x + w * 0.1, y + h * 0.6, w * 0.3, h * 0.4);
+        ctx.fillRect(x + w * 0.6, y + h * 0.6, w * 0.3, h * 0.4);
+        ctx.fillStyle = '#d32f2f';
+        ctx.fillRect(x, y + h * 0.2, w, h * 0.45);
+        ctx.fillStyle = '#ffccbc';
+        ctx.fillRect(x + w * 0.2, y + h * 0.1, w * 0.6, h * 0.2);
+        ctx.fillStyle = '#ffc107';
+        ctx.beginPath();
+        ctx.arc(x + w / 2, y + h * 0.15, w / 2, Math.PI, 2 * Math.PI, false);
+        ctx.fill();
+        ctx.fillStyle = '#666';
+        if (fireman.direction === 'right') {
+            ctx.fillRect(x + w * 0.8, y + h * 0.4, 15 * scaleFactor, 10 * scaleFactor);
+        } else {
+            ctx.fillRect(x - 10 * scaleFactor, y + h * 0.4, 15 * scaleFactor, 10 * scaleFactor);
+        }
+    }
+
+    function createFire() {
+        const size = (Math.random() * 20 + 20) * scaleFactor;
+        return {
+            x: Math.random() * (canvas.width - size),
+            y: -size, // Start above canvas
+            width: size,
+            height: size,
+            speedY: (Math.random() * 2 + 2) * scaleFactor // Fall at varied speed
+        };
+    }
+
+    function drawFires() {
+        fires.forEach(fire => {
+            const flicker = Math.random() * 5 * scaleFactor;
+            ctx.fillStyle = `rgba(255, ${Math.random() * 100 + 100}, 0, 0.7)`;
+            ctx.beginPath();
+            ctx.moveTo(fire.x, fire.y);
+            ctx.lineTo(fire.x + fire.width / 2, fire.y - fire.height - flicker);
+            ctx.lineTo(fire.x + fire.width, fire.y);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = `rgba(255, 255, 0, 0.8)`;
+            ctx.beginPath();
+            ctx.moveTo(fire.x + fire.width * 0.2, fire.y);
+            ctx.lineTo(fire.x + fire.width / 2, fire.y - fire.height * 0.7 - flicker);
+            ctx.lineTo(fire.x + fire.width * 0.8, fire.y);
+            ctx.closePath();
+            ctx.fill();
+        });
+    }
+
+    function drawExtinguisherParticles() {
+        extinguisherParticles.forEach(p => {
+            ctx.fillStyle = `rgba(255, 255, 255, ${p.opacity})`;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+        });
+    }
+
+    function updateFireman() {
+        fireman.dx = 0;
+        if (keys['ArrowLeft'] || keys['KeyA']) {
+            fireman.dx = -fireman.speed;
+            fireman.direction = 'left';
+        }
+        if (keys['ArrowRight'] || keys['KeyD']) {
+            fireman.dx = fireman.speed;
+            fireman.direction = 'right';
+        }
+        fireman.x += fireman.dx;
+        if (fireman.x < 0) fireman.x = 0;
+        if (fireman.x + fireman.width > canvas.width) fireman.x = canvas.width - fireman.width;
+        if (keys['Space']) createExtinguisherParticle();
+    }
+
+    function createExtinguisherParticle() {
+        const size = (Math.random() * 5 + 2) * scaleFactor;
+        let particleX, speedX;
+        if (fireman.direction === 'right') {
+            particleX = fireman.x + fireman.width + 5 * scaleFactor;
+            speedX = (Math.random() * 5 + 5) * scaleFactor;
+        } else {
+            particleX = fireman.x - 5 * scaleFactor;
+            speedX = -(Math.random() * 5 + 5) * scaleFactor;
+        }
+        extinguisherParticles.push({
+            x: particleX,
+            y: fireman.y + fireman.height * 0.4 + 5 * scaleFactor,
+            size: size,
+            speedX: speedX,
+            speedY: (Math.random() - 0.5) * 2 * scaleFactor,
+            opacity: 1,
+            life: 60
+        });
+    }
+
+    function updateFires() {
+        fires.forEach(fire => {
+            fire.y += fire.speedY;
+            if (fire.y > canvasHeight) {
+                fires.splice(fires.indexOf(fire), 1);
+            }
+        });
+    }
+
+    function updateParticles() {
+        for (let i = extinguisherParticles.length - 1; i >= 0; i--) {
+            const p = extinguisherParticles[i];
+            p.x += p.speedX;
+            p.y += p.speedY;
+            p.life--;
+            p.opacity = p.life / 60;
+            if (p.life <= 0) extinguisherParticles.splice(i, 1);
+        }
+    }
+
+    function handleCollisions() {
+        for (let i = extinguisherParticles.length - 1; i >= 0; i--) {
+            const p = extinguisherParticles[i];
+            for (let j = fires.length - 1; j >= 0; j--) {
+                const fire = fires[j];
+                if (p.x < fire.x + fire.width && p.x + p.size > fire.x &&
+                    p.y < fire.y + 5 && p.y + p.size > fire.y - fire.height) {
+                    fires.splice(j, 1);
+                    extinguisherParticles.splice(i, 1);
+                    score += 10;
+                    scoreEl.textContent = `分數: ${score}`;
+                    break;
+                }
+            }
+        }
+        for (let j = fires.length - 1; j >= 0; j--) {
+            const fire = fires[j];
+            if (fire.x + fire.width > fireman.x && fire.x < fireman.x + fireman.width &&
+                fire.y + fire.height > fireman.y && fire.y < fireman.y + fireman.height) {
+                endGame();
+                break;
+            }
+        }
+    }
+
+    function gameLoop() {
+        if (isGameOver) return;
+        updateFireman();
+        updateFires();
+        updateParticles();
+        handleCollisions();
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawFires();
+        drawFireman();
+        drawExtinguisherParticles();
+        requestAnimationFrame(gameLoop);
+    }
+
+    function startGame() {
+        score = 0;
+        timeLeft = 60;
+        fires = [];
+        extinguisherParticles = [];
+        isGameOver = false;
+        resizeCanvas();
+        fireman.x = 50 * scaleFactor;
+        fireman.y = canvasHeight - fireman.height - 10;
+        scoreEl.textContent = `分數: ${score}`;
+        timerEl.textContent = `時間: ${timeLeft}`;
+        startScreen.style.display = 'none';
+        gameOverScreen.style.display = 'none';
+        gameInterval = setInterval(() => {
+            if (fires.length < 10) {
+                fires.push(createFire());
+            }
+        }, 1000);
+        timerInterval = setInterval(() => {
+            timeLeft--;
+            timerEl.textContent = `時間: ${timeLeft}`;
+            if (timeLeft <= 0) endGame();
+        }, 1000);
+        gameLoop();
+    }
+
+    function endGame() {
+        isGameOver = true;
+        clearInterval(gameInterval);
+        clearInterval(timerInterval);
+        finalScoreEl.textContent = `你的分數: ${score}`;
+        gameOverScreen.style.display = 'flex';
+        Object.keys(keys).forEach(key => keys[key] = false);
+    }
+
+    startButton.addEventListener('click', startGame);
+    restartButton.addEventListener('click', startGame);
+</script>
+</body>
+</html>
+```
